@@ -6,6 +6,7 @@
 #include <linux/errno.h>
 #include <linux/sched.h>
 #include <linux/rcupdate.h>
+#include <linux/fdtable.h>
 #include "arb_genl_api.h"
 #include "arb_api.h"
 
@@ -39,20 +40,32 @@ static const struct nla_policy arb_genl_api_policy[] = {
 	[ARB_GENL_ATTR_FD] = { .len = sizeof(int) },
 	[ARB_GENL_ATTR_SERVICE_NAME] = { .type = NLA_NUL_STRING }
 };
-	
+
 static int arb_genl_api_set_service(struct sk_buff *skb, struct genl_info *info)
 {
 	int *fd;
 	char *service_name;
 	pid_t pid = info->snd_portid;
-	struct task_struct *tsk;
+	struct task_struct *tsk = NULL;
+	struct files_struct *files = NULL;
 
-	rcu_read_lock();
-	tsk = pid_task(find_vpid(pid), PIDTYPE_PID);
+	printk("Entered arb_genl_api_set_service\n");
+
+	tsk = get_pid_task(find_vpid(pid), PIDTYPE_PID);
 	if (tsk)
+	{
 		printk("Called arb_genl_api_set_service from %u, %u\n", pid, tsk->tgid);
+		if (tsk->files)
+		{
+			printk("Called arb_genl_api_set_service for file: %pK\n", files);
+		}
+		put_task_struct(tsk);
+	}
 	else
+	{
 		printk("Called arb_genl_api_set_service from %u\n", pid);
+	}
+
 	rcu_read_unlock();
 
 	if (info->attrs[ARB_GENL_ATTR_FD] && info->attrs[ARB_GENL_ATTR_SERVICE_NAME])
