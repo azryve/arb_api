@@ -43,15 +43,52 @@ static const struct nla_policy arb_genl_api_policy[] = {
 	[ARB_GENL_ATTR_SERVICE_NAME] = { .type = NLA_NUL_STRING }
 };
 
+
+static int sockfd_set_mark(const int fd, const pid_t pid, const u32 mark)
+{
+	struct file *file = NULL;
+	struct task_struct *task = NULL;
+	struct socket *socket = NULL;
+	int err = 0;
+
+	task = get_pid_task(find_vpid(pid), PIDTYPE_PID);
+	if (!task) {
+		err = -EINVAL;
+		goto out;
+	}
+
+	task_lock(task);
+	if (!task->files) {
+		err = -EINVAL;
+		goto task_out;
+	}
+
+	rcu_read_lock(); // for fcheck_files
+	file = fcheck_files(task->files, fd);
+	if (file) {
+		spin_lock(&file->f_lock);
+		socket = sock_from_file(file, &err); // -ENOTSOCK if not socket
+		if (socket)
+			socket->sk->sk_mark = mark;
+		spin_unlock(&file->f_lock);
+	}
+	else
+		err = -ENOENT; // fd not found
+	rcu_read_unlock();
+task_out:
+	task_unlock(task);
+	put_task_struct(task);
+out:
+	return err;
+}
+
 static int arb_genl_api_set_service(struct sk_buff *skb, struct genl_info *info)
 {
-	unsigned int *fd;
+	int *fd;
 	char *service_name;
 	pid_t pid = info->snd_portid;
-	struct task_struct *tsk = NULL;
-	struct file *file;
-	struct socket *socket;
-	struct sock *sk;
+	u32 mark = 555;
+	int err;
 
 	printk("Entered arb_genl_api_set_service\n");
 
@@ -71,38 +108,24 @@ static int arb_genl_api_set_service(struct sk_buff *skb, struct genl_info *info)
 
 		return -1;
 	}
-
-	tsk = get_pid_task(find_vpid(pid), PIDTYPE_PID);
-	if (tsk)
-	{
-		int err;
-		printk("Called arb_genl_api_set_service from %u, %u\n", pid, tsk->tgid);
-		if (tsk->files)
-		{
-			rcu_read_lock();
-			// XXX struct_files getting
-			file = fcheck_files(tsk->files, *fd);
-			if (file)
-			{
-				printk("Called arb_genl_api_set_service for file: %p\n", file);
-				socket = sock_from_file(file, &err);
-				if (socket)
-				{
-					sk = socket->sk;
-					sk->sk_mark = 555;
-				}
-				else
-					printk("Wrong file type\n");
-			}
-			else
-				printk("File not found\n");
-
-			rcu_read_unlock();
+	if ((err = sockfd_set_mark(*fd, pid, mark)) != 0) {
+		switch (err) {
+		case -EINVAL:
+			printk("Not found pid %u\n", pid);
+			break;
+		case -ENOENT:
+			printk("Not found fd %d\n", *fd);
+			break;
+		case -ENOTSOCK:
+			printk("Not socket fd passed %d\n", *fd);
+			break;
+		default:
+			printk("Unknown error from sockfd_set_mark\n");
 		}
-		put_task_struct(tsk);
 	}
 	else
-		printk("Called arb_genl_api_set_service from %u, task not found\n", pid);
+		printk("Set pid's: %u fd: %d, mark %u\n", pid, *fd, mark);
+
 
 	return 0;
 }
