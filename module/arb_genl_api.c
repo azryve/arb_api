@@ -7,6 +7,8 @@
 #include <linux/sched.h>
 #include <linux/rcupdate.h>
 #include <linux/fdtable.h>
+#include <linux/net.h>
+#include <net/sock.h>
 #include "arb_genl_api.h"
 #include "arb_api.h"
 
@@ -43,30 +45,15 @@ static const struct nla_policy arb_genl_api_policy[] = {
 
 static int arb_genl_api_set_service(struct sk_buff *skb, struct genl_info *info)
 {
-	int *fd;
+	unsigned int *fd;
 	char *service_name;
 	pid_t pid = info->snd_portid;
 	struct task_struct *tsk = NULL;
-	struct files_struct *files = NULL;
+	struct file *file;
+	struct socket *socket;
+	struct sock *sk;
 
 	printk("Entered arb_genl_api_set_service\n");
-
-	tsk = get_pid_task(find_vpid(pid), PIDTYPE_PID);
-	if (tsk)
-	{
-		printk("Called arb_genl_api_set_service from %u, %u\n", pid, tsk->tgid);
-		if (tsk->files)
-		{
-			printk("Called arb_genl_api_set_service for file: %pK\n", files);
-		}
-		put_task_struct(tsk);
-	}
-	else
-	{
-		printk("Called arb_genl_api_set_service from %u\n", pid);
-	}
-
-	rcu_read_unlock();
 
 	if (info->attrs[ARB_GENL_ATTR_FD] && info->attrs[ARB_GENL_ATTR_SERVICE_NAME])
 	{
@@ -81,7 +68,41 @@ static int arb_genl_api_set_service(struct sk_buff *skb, struct genl_info *info)
 
 		if (!info->attrs[ARB_GENL_ATTR_SERVICE_NAME])
 			printk("Not passed service name\n");
+
+		return -1;
 	}
+
+	tsk = get_pid_task(find_vpid(pid), PIDTYPE_PID);
+	if (tsk)
+	{
+		int err;
+		printk("Called arb_genl_api_set_service from %u, %u\n", pid, tsk->tgid);
+		if (tsk->files)
+		{
+			rcu_read_lock();
+			// XXX struct_files getting
+			file = fcheck_files(tsk->files, *fd);
+			if (file)
+			{
+				printk("Called arb_genl_api_set_service for file: %p\n", file);
+				socket = sock_from_file(file, &err);
+				if (socket)
+				{
+					sk = socket->sk;
+					sk->sk_mark = 555;
+				}
+				else
+					printk("Wrong file type\n");
+			}
+			else
+				printk("File not found\n");
+
+			rcu_read_unlock();
+		}
+		put_task_struct(tsk);
+	}
+	else
+		printk("Called arb_genl_api_set_service from %u\n", pid);
 
 	return 0;
 }
