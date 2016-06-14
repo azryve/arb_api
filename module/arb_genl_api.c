@@ -102,7 +102,7 @@ static int arb_genl_api_set_service(struct sk_buff *skb, struct genl_info *info)
 		put_task_struct(tsk);
 	}
 	else
-		printk("Called arb_genl_api_set_service from %u\n", pid);
+		printk("Called arb_genl_api_set_service from %u, task not found\n", pid);
 
 	return 0;
 }
