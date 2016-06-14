@@ -6,6 +6,8 @@
 #include <netlink/genl/genl.h>
 #include <netlink/genl/ctrl.h>
 #include <netlink/data.h>
+#include <sys/socket.h>
+#include <fcntl.h>
 #include "arb_api.h"
 
 struct {
@@ -29,7 +31,7 @@ int main(int argc, char *argv[])
 	struct genl_family *family;
 	struct nl_msg *msg;
 	void *hdr;
-	int fd = 131;
+	int fd = socket(AF_INET, SOCK_STREAM, 0);
 	int mark = 999;
 	char service[] = "Svc1";
 
@@ -58,6 +60,8 @@ int main(int argc, char *argv[])
 
 	if (nl_send_auto(link.sock, msg) < 0)
 		errx(1, "Failed at nl_send_auto");
+
+	sleep(2);
 	
 	return 0;
 }
